@@ -131,50 +131,31 @@ var
   FileName: PAnsiChar;
   Handle: TArchiveHandle absolute hArcData;
 begin
-  Result:= E_SUCCESS;
   case Operation of
     PK_SKIP: archive_read_data_skip(Handle.Archive);
     PK_EXTRACT:
       begin
-
-        WriteLn('1');
-        //archive_write_open_filename(FileHandle, PAnsiChar(String(DestPath) + String(DestName)));
-                WriteLn('2');
-        try
-          FileName:= PAnsiChar(String(DestPath) + String(DestName));
-          archive_entry_set_pathname(Handle.ArchiveEntry, FileName);
-          archive_write_header(Handle.Disk, Handle.ArchiveEntry);
-                  WriteLn('3');
-          repeat
-            WriteLn('3/1');
-            Result:= archive_read_data_block(Handle.Archive, @Buffer, @size, @Offset);
-            WriteLn('4');
-            if (Result = ARCHIVE_EOF) then
-            begin
-              WriteLn('4/1');
-              if archive_write_finish_entry(Handle.Disk) = ARCHIVE_OK then
-                Exit(E_SUCCESS)
-              else begin
-                Exit(E_EWRITE);
-              end;
-
+        FileName:= PAnsiChar(String(DestPath) + String(DestName));
+        archive_entry_set_pathname(Handle.ArchiveEntry, FileName);
+        archive_write_header(Handle.Disk, Handle.ArchiveEntry);
+        repeat
+          Result:= archive_read_data_block(Handle.Archive, @Buffer, @Size, @Offset);
+          if (Result = ARCHIVE_EOF) then
+          begin
+            if archive_write_finish_entry(Handle.Disk) = ARCHIVE_OK then
+              Exit(E_SUCCESS)
+            else begin
+              Exit(E_EWRITE);
             end;
-            if (Result <> ARCHIVE_OK) then Exit(E_EREAD);
-            Result:= archive_write_data_block(Handle.Disk, buffer, Size, Offset);
-                        WriteLn('5');
-            if (Result <> ARCHIVE_OK) then Exit(E_EWRITE);
-            Handle.ProcessDataProc(FileName, Size);
-          until False;
-        finally
-          //WriteLn('5.1 ', archive_error_string(FileHandle));
-          //Offset:= achive_write_free(FileHandle);
-          WriteLn('6');
-        end;
-
-        WriteLn('7');
-        if Offset <> ARCHIVE_OK then Result:= E_ECLOSE;
+          end;
+          if (Result <> ARCHIVE_OK) then Exit(E_EREAD);
+          Result:= archive_write_data_block(Handle.Disk, buffer, Size, Offset);
+          if (Result <> ARCHIVE_OK) then Exit(E_EWRITE);
+          Handle.ProcessDataProc(FileName, Size);
+        until False;
       end;
   end;
+  Result:= E_SUCCESS;
 end;
 
 function CloseArchive(hArcData: TArcHandle): Integer; dcpcall;
