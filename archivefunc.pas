@@ -28,6 +28,7 @@ threadvar
 type
   TArchiveHandle = class
     Archive: PArchive;
+    Disk: PArchive;
     ArchiveEntry: PArchiveEntry;
     ProcessDataProc: TProcessDataProc;
   end;
@@ -61,10 +62,37 @@ var
   Handle: TArchiveHandle;
 begin
   Handle:= TArchiveHandle.Create;
+
   Handle.Archive:= archive_read_new();
+  if Handle.Archive = nil then
+  begin
+    ArchiveData.OpenResult:= E_NO_MEMORY;
+    Handle.Free;
+    Exit(0);
+  end;
+
   archive_read_support_filter_all(Handle.Archive);
   archive_read_support_format_all(Handle.Archive);
-  archive_read_open_filename(Handle.Archive, ArchiveData.ArcName, 40960);
+
+  if archive_read_open_filename(Handle.Archive, ArchiveData.ArcName, 40960) <> ARCHIVE_OK then
+  begin
+    ArchiveData.OpenResult:= E_EOPEN;
+    archive_read_free(Handle.Archive);
+    Handle.Free;
+    Exit(0);
+  end;
+
+  if ArchiveData.OpenMode = PK_OM_EXTRACT then
+  begin
+    Handle.Disk:= archive_write_disk_new();
+    if Handle.Disk = nil then
+    begin
+      ArchiveData.OpenResult:= E_NO_MEMORY;
+      archive_read_free(Handle.Archive);
+      Handle.Free;
+      Exit(0);
+    end;
+  end;
 
   Result:= TArcHandle(Handle);
 end;
@@ -99,7 +127,6 @@ function ProcessFile(hArcData: TArcHandle; Operation: Integer; DestPath,
 var
   Size: csize_t;
   Offset: cint64;
-  FileHandle: PArchive;
   Buffer: PByte;
   FileName: PAnsiChar;
   Handle: TArchiveHandle absolute hArcData;
@@ -109,15 +136,14 @@ begin
     PK_SKIP: archive_read_data_skip(Handle.Archive);
     PK_EXTRACT:
       begin
-        FileHandle:= archive_write_disk_new();
-        if FileHandle = nil then Exit(E_NO_MEMORY);
+
         WriteLn('1');
         //archive_write_open_filename(FileHandle, PAnsiChar(String(DestPath) + String(DestName)));
                 WriteLn('2');
         try
           FileName:= PAnsiChar(String(DestPath) + String(DestName));
           archive_entry_set_pathname(Handle.ArchiveEntry, FileName);
-          archive_write_header(FileHandle, Handle.ArchiveEntry);
+          archive_write_header(Handle.Disk, Handle.ArchiveEntry);
                   WriteLn('3');
           repeat
             WriteLn('3/1');
@@ -126,7 +152,7 @@ begin
             if (Result = ARCHIVE_EOF) then
             begin
               WriteLn('4/1');
-              if archive_write_finish_entry(FileHandle) = ARCHIVE_OK then
+              if archive_write_finish_entry(Handle.Disk) = ARCHIVE_OK then
                 Exit(E_SUCCESS)
               else begin
                 Exit(E_EWRITE);
@@ -134,7 +160,7 @@ begin
 
             end;
             if (Result <> ARCHIVE_OK) then Exit(E_EREAD);
-            Result:= archive_write_data_block(FileHandle, buffer, Size, Offset);
+            Result:= archive_write_data_block(Handle.Disk, buffer, Size, Offset);
                         WriteLn('5');
             if (Result <> ARCHIVE_OK) then Exit(E_EWRITE);
             Handle.ProcessDataProc(FileName, Size);
@@ -144,7 +170,7 @@ begin
           //Offset:= achive_write_free(FileHandle);
           WriteLn('6');
         end;
-        Offset:= achive_write_free(FileHandle);
+
         WriteLn('7');
         if Offset <> ARCHIVE_OK then Result:= E_ECLOSE;
       end;
@@ -155,8 +181,11 @@ function CloseArchive(hArcData: TArcHandle): Integer; dcpcall;
 var
   Handle: TArchiveHandle absolute hArcData;
 begin
-  archive_read_close(Handle.Archive);
   archive_read_free(Handle.Archive);
+  if Assigned(Handle.Disk) then
+  begin
+   //  achive_write_free(Handle.Disk);
+  end;
 end;
 
 procedure SetChangeVolProc(hArcData: TArcHandle; pChangeVolProc: PChangeVolProc
