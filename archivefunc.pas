@@ -22,13 +22,14 @@ implementation
 uses
   CTypes, uArchive, DCFileAttributes, DCDateTimeUtils, DCOSUtils, Windows;
 
-var
-  ProcessDataProc: TProcessDataProc;
+threadvar
+  ProcessDataProcT: TProcessDataProc;
 
 type
   TArchiveHandle = class
     Archive: PArchive;
     ArchiveEntry: PArchiveEntry;
+    ProcessDataProc: TProcessDataProc;
   end;
 
 procedure GetFileName(FileName: PAnsiChar; var HeaderData: THeaderDataEx);
@@ -100,6 +101,7 @@ var
   Offset: cint64;
   FileHandle: PArchive;
   Buffer: PByte;
+  FileName: PAnsiChar;
   Handle: TArchiveHandle absolute hArcData;
 begin
   Result:= E_SUCCESS;
@@ -113,7 +115,8 @@ begin
         //archive_write_open_filename(FileHandle, PAnsiChar(String(DestPath) + String(DestName)));
                 WriteLn('2');
         try
-          archive_entry_set_pathname(Handle.ArchiveEntry, PAnsiChar(String(DestPath) + String(DestName)));
+          FileName:= PAnsiChar(String(DestPath) + String(DestName));
+          archive_entry_set_pathname(Handle.ArchiveEntry, FileName);
           archive_write_header(FileHandle, Handle.ArchiveEntry);
                   WriteLn('3');
           repeat
@@ -134,13 +137,15 @@ begin
             Result:= archive_write_data_block(FileHandle, buffer, Size, Offset);
                         WriteLn('5');
             if (Result <> ARCHIVE_OK) then Exit(E_EWRITE);
-            ProcessDataProc(PAnsiChar(String(DestPath) + String(DestName)), Offset);
-          until Size = 0;
+            Handle.ProcessDataProc(FileName, Size);
+          until False;
         finally
-          WriteLn('5.1 ', archive_error_string(FileHandle));
+          //WriteLn('5.1 ', archive_error_string(FileHandle));
           //Offset:= achive_write_free(FileHandle);
           WriteLn('6');
         end;
+        Offset:= achive_write_free(FileHandle);
+        WriteLn('7');
         if Offset <> ARCHIVE_OK then Result:= E_ECLOSE;
       end;
   end;
@@ -160,10 +165,15 @@ begin
 
 end;
 
-procedure SetProcessDataProc(hArcData: TArcHandle;
-  pProcessDataProc: TProcessDataProc); dcpcall;
+procedure SetProcessDataProc(hArcData: TArcHandle; pProcessDataProc: TProcessDataProc); dcpcall;
+var
+  Handle: TArchiveHandle absolute hArcData;
 begin
-  ProcessDataProc:= pProcessDataProc;
+  if hArcData <> wcxInvalidHandle then
+     Handle.ProcessDataProc := pProcessDataProc
+  else begin
+    ProcessDataProcT := pProcessDataProc;
+  end;
 end;
 
 end.
